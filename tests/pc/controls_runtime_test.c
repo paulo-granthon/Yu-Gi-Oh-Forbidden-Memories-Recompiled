@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "pc/compat/posix.h"
 #include "scratch.h"
 #include <unistd.h>
@@ -78,19 +79,79 @@ int main(void)
     ControlsRuntime_Update();
     assert(ControlsRuntime_Pad(0) == CTRL_DEST_CROSS);
 
-    /* While held (a notice is up) the game sees nothing, but the pad's
-     * presses are there for the notice. Release waits for neutral. */
+    /* Exit game (Esc by default) fires once per press, from a tap too short
+     * for any update to see it held, and never for a press made while the
+     * input is blocked or held. */
     d->snapshot.buttons_down = 0;
     ControlsRuntime_Update();
-    ControlsRuntime_TakePadPresses();
-    ControlsRuntime_Hold(1);
-    d->snapshot.buttons_down = 1u << (CTRL_BTN_GUIDE - 1);
+    ControlsRuntime_TakeHost();
+    ControlsRuntime_Key(CTRL_KEY_ESCAPE, 1);
     ControlsRuntime_Update();
-    assert(ControlsRuntime_Blocked() && !ControlsRuntime_Pad(0));
+    assert(ControlsRuntime_TakeHost() == 1u << CTRL_HOST_EXIT);
+    ControlsRuntime_Update();
+    assert(!ControlsRuntime_TakeHost() && !ControlsRuntime_Keyboard());
+    ControlsRuntime_Key(CTRL_KEY_ESCAPE, 0);
+    ControlsRuntime_Key(CTRL_KEY_ESCAPE, 1);
+    ControlsRuntime_Key(CTRL_KEY_ESCAPE, 0);
+    ControlsRuntime_Update();
+    assert(ControlsRuntime_TakeHost() == 1u << CTRL_HOST_EXIT);
+    ControlsRuntime_Block(1);
+    ControlsRuntime_Key(CTRL_KEY_ESCAPE, 1);
+    ControlsRuntime_Update();
+    ControlsRuntime_Block(0);
+    ControlsRuntime_Update();
+    assert(!ControlsRuntime_TakeHost()); /* still the same press */
+    ControlsRuntime_Key(CTRL_KEY_ESCAPE, 0);
+    ControlsRuntime_Update();
+
+    /* Turbo (Tab) is a hold action: held while the key is, and not while
+     * input is blocked. Volume up (keypad +) fires on the press, then again
+     * once held past the repeat delay. */
+    ControlsRuntime_TakeHost();
+    ControlsRuntime_Key(CTRL_KEY_TAB, 1);
+    ControlsRuntime_Update();
+    assert(ControlsRuntime_HostHeld() == 1u << CTRL_HOST_TURBO && ControlsRuntime_KeyDown(CTRL_KEY_TAB));
+    ControlsRuntime_Block(1);
+    ControlsRuntime_Update();
+    assert(!ControlsRuntime_HostHeld());
+    ControlsRuntime_Key(CTRL_KEY_TAB, 0);
+    ControlsRuntime_Block(0);
+    ControlsRuntime_Update();
+    ControlsRuntime_Update();
+    ControlsRuntime_TakeHost();
+    ControlsRuntime_Key(CTRL_KEY_KP_PLUS, 1);
+    ControlsRuntime_Update();
+    assert(ControlsRuntime_TakeHost() == 1u << CTRL_HOST_VOLUME_UP);
+    ControlsRuntime_Update();
+    assert(!ControlsRuntime_TakeHost());
+    nanosleep(&(struct timespec){0, 450000000}, NULL);
+    ControlsRuntime_Update();
+    assert(ControlsRuntime_TakeHost() == 1u << CTRL_HOST_VOLUME_UP);
+    ControlsRuntime_Key(CTRL_KEY_KP_PLUS, 0);
+    ControlsRuntime_Update();
+
+    /* The controller's own Exit binding; while held (a notice is up) the game
+     * sees nothing and Exit does not fire, but the pad's presses are there
+     * for the notice. Release waits for neutral. */
+    cfg = *ControlsRuntime_Config();
+    ControlsRuntime_Profile(&cfg, 0, 1)->host[CTRL_HOST_EXIT][0] = (ControlSource){CTRL_SRC_BUTTON, CTRL_BTN_BACK, 0};
+    ControlsRuntime_Profile(&cfg, 0, 1)->src[0][0] = (ControlSource){0};
+    assert(ControlsRuntime_Apply(&cfg, error, sizeof(error)));
+    ControlsRuntime_Update();
+    ControlsRuntime_TakePadPresses();
+    d->snapshot.buttons_down = 1u << (CTRL_BTN_BACK - 1);
+    ControlsRuntime_Update();
+    assert(ControlsRuntime_TakeHost() == 1u << CTRL_HOST_EXIT && !ControlsRuntime_Pad(0));
+    d->snapshot.buttons_down = 0;
+    ControlsRuntime_Hold(1);
+    ControlsRuntime_Update();
+    d->snapshot.buttons_down = 1u << (CTRL_BTN_BACK - 1) | 1u << (CTRL_BTN_GUIDE - 1);
+    ControlsRuntime_Update();
+    assert(ControlsRuntime_Blocked() && !ControlsRuntime_Pad(0) && !ControlsRuntime_TakeHost());
     assert(ControlsRuntime_TakePadPresses() == CTRL_DEST_CROSS && !ControlsRuntime_TakePadPresses());
     ControlsRuntime_Hold(0);
     ControlsRuntime_Update();
-    assert(!ControlsRuntime_Pad(0));
+    assert(!ControlsRuntime_Pad(0) && !ControlsRuntime_TakeHost());
     d->snapshot.buttons_down = 0;
     ControlsRuntime_Update();
     d->snapshot.buttons_down = 1u << (CTRL_BTN_GUIDE - 1);
@@ -98,6 +159,6 @@ int main(void)
     assert(!ControlsRuntime_Blocked() && ControlsRuntime_Pad(0) == CTRL_DEST_CROSS);
     unlink(path);
     rmdir(dir);
-    puts("controls runtime: selection, hotplug, profiles and release gate passed");
+    puts("controls runtime: selection, hotplug, profiles, release gate, host actions, hold, held and repeating actions passed");
     return 0;
 }

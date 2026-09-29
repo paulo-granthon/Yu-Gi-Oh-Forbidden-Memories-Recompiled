@@ -21,9 +21,6 @@ void ControlsRuntime_Reconcile(void);
 ControlsProfile *ControlsRuntime_Profile(ControlsConfig *cfg, int port, int create);
 CtrlIconStyle *ControlsRuntime_Style(ControlsConfig *cfg, int port, int create);
 void ControlsRuntime_Key(int key, int down);
-/* Nonzero when the keyboard profile binds `key` (a CTRL_KEY_*) to a pad
- * button: a host shortcut on an unreserved key yields to the binding. */
-int ControlsRuntime_KeyBound(int key);
 void ControlsRuntime_ResetKeys(void);
 int ControlsRuntime_Keys(ControlSource *out);
 void ControlsRuntime_Block(int block);
@@ -32,6 +29,15 @@ int ControlsRuntime_Blocked(void);
 /* Keep the game's input at rest (the menu's notice has it) without touching
  * the Controls window's block; releasing waits for neutral, like a block. */
 void ControlsRuntime_Hold(int hold);
+/* Host actions pressed since the last call, bit 1 << CTRL_HOST_*: one per
+ * press (and, for repeating ones, again while held), none while input is
+ * blocked or held. */
+uint32_t ControlsRuntime_TakeHost(void);
+/* Host actions held at the last update, 0 while input is blocked or held:
+ * what a hold action (Turbo) follows. */
+uint32_t ControlsRuntime_HostHeld(void);
+/* The physical key is down (CTRL_KEY_*), whatever it is bound to. */
+int ControlsRuntime_KeyDown(int key);
 /* Pad buttons newly pressed on either controller since the last call, also
  * while input is held: what answers a notice from a controller. */
 uint16_t ControlsRuntime_TakePadPresses(void);
